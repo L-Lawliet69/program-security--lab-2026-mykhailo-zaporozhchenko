@@ -1,97 +1,123 @@
-# ====== IDENTITY MODULE BUSINESS LOGIC ======
+# Бізнес-логіка модуля Identity (Облікові записи та автентифікація)
 
-> Bounded Context: `Identity`. Відповідає за реєстрацію нових користувачів, автентифікацію, забезпечення унікальності нікнеймів, криптографічне хешування паролів за стандартом Argon2id, безпеку сесій та публічний профіль гравця (що відображається у правому верхньому куті вікна програми).
-
----
-
-## 1. Purpose
-
-Модуль `Identity` володіє:
-- Реєстрацією користувачів: перевірка унікальності електронної пошти та нікнейму (з урахуванням регістру та нормалізації).
-- Автентифікацією користувачів за паролем та видачею сесійних токенів (JWT / Refresh tokens).
-- Криптографічним захистом: хешування паролів алгоритмом Argon2id з індивідуальною сіллю.
-- Захистом від атак методом підбору (Rate Limiting на спроби входу).
-- Профілем користувача (`Profile`): зберігання інформації про обраного активного аніме-персонажа.
-
-**NOT here:**
-- Каталог доступних персонажів та перелік тайтлів (належить `Character`).
-- Розрахунок статистики зіграних матчів (належить `Leaderboard`).
-- Ігровий процес та черги матчів (належить `Gameplay`).
+> Модуль: `Identity`. Відповідає за реєстрацію, авторизацію користувачів, забезпечення унікальності нікнеймів, криптографічне хешування паролів та роботу віджета профілю у правому верхньому куті вікна гри **Unity (C#)**. Побудований на **простому C# ООП без використання Domain-Driven Design (DDD)**.
 
 ---
 
-## 2. Entities
+## 1. Призначення модуля
 
-| Entity | Basic Fields | Description | Invariants |
-|---|---|---|---|
-| `UserAccount` *(Aggregate Root)* | `uuid`, `email`, `nickname`, `normalizedNickname`, `passwordHash`, `status`, `createdAt`, `updatedAt` | Обліковий запис користувача. | - `uuid` іммутабельний.<br>- `email` валідний за RFC 5322.<br>- `nickname` унікальний в системі (довжина 3–20 символів, дозволені символи `[a-zA-Z0-9_-]`).<br>- `normalizedNickname` зберігає нікнейм у нижньому регістрі для швидкої та безпомилкової перевірки унікальності.<br>- `passwordHash` створений за допомогою Argon2id. |
-| `Profile` *(Entity, owned by `UserAccount`)* | `uuid`, `userId`, `activeCharacterId`, `updatedAt` | Профіль користувача, що відображається у правому верхньому куті вікна. | - `userId` посилається на існуючого активного користувача.<br>- `activeCharacterId` завжди вказує на валідного персонажа (дефолтний персонаж призначається при реєстрації). |
+Модуль `Identity` забезпечує:
+1. **Реєстрацію користувача:** введення пошти, нікнейму та пароля.
+2. **Перевірку унікальності нікнейму:** перевірка імені без урахування регістру (`Alex` та `alex` вважаються однаковими, створення дублікатів блокується).
+3. **Криптографічний захист паролів:** паролі хешуються за допомогою безпечного алгоритму (Argon2id або PBKDF2) з індивідуальною сіллю. Збереження паролів у відкритому вигляді заборонено.
+4. **Авторизацію (Вхід):** перевірка введеного пароля за хешем та вхід у систему.
+5. **Профіль гравця:** підтримка даних користувача (ID, нікнейм, пошта, ID обраного аніме-героя) для відображення у віджеті у правому верхньому куті вікна гри.
 
 ---
 
-## 3. Status Lifecycle
+## 2. Моделі даних (C#)
 
-Обліковий запис (`UserAccount`):
-
-```
-[REGISTERED / PENDING] ──> [ACTIVE] ──> [SUSPENDED / BANNED]
+```csharp
+public class PlayerProfile
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Email { get; set; } = string.Empty;
+    public string Nickname { get; set; } = string.Empty;
+    public string PasswordHash { get; set; } = string.Empty;
+    public string PasswordSalt { get; set; } = string.Empty;
+    public string ActiveCharacterId { get; set; } = "default_hero_01";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
 ```
 
-- Користувач створюється в статусі `ACTIVE` (або `PENDING` при активації через пошту).
-- Дозволені переходи:
-  - `ACTIVE` $\rightarrow$ `SUSPENDED` (блокування за порушення або підозрілу активність адміністратором/системою безпеки).
-  - `SUSPENDED` $\rightarrow$ `ACTIVE` (розблокування).
+---
+
+## 3. Сервіс автентифікації (`AuthService.cs`)
+
+Звичайний C# клас із простими методами валідації та збереження:
+
+```csharp
+public class AuthService
+{
+    private readonly ISaveStorage _storage;
+
+    public AuthService(ISaveStorage storage)
+    {
+        _storage = storage;
+    }
+
+    // Реєстрація нового користувача
+    public bool Register(string email, string nickname, string password, out string errorMessage)
+    {
+        errorMessage = string.Empty;
+
+        // 1. Валідація нікнейму
+        if (string.IsNullOrWhiteSpace(nickname) || nickname.Length < 3 || nickname.Length > 20)
+        {
+            errorMessage = "Нікнейм має містити від 3 до 20 символів.";
+            return false;
+        }
+
+        // 2. Перевірка унікальності без урахування регістру
+        if (_storage.ExistsNickname(nickname.ToLowerInvariant()))
+        {
+            errorMessage = "Цей нікнейм уже зайнятий.";
+            return false;
+        }
+
+        // 3. Валідація пароля
+        if (string.IsNullOrEmpty(password) || password.Length < 8)
+        {
+            errorMessage = "Пароль має містити щонайменше 8 символів.";
+            return false;
+        }
+
+        // 4. Генерація солі та хешування пароля (Argon2id / PBKDF2)
+        string salt = PasswordHasher.GenerateSalt();
+        string hash = PasswordHasher.HashPassword(password, salt);
+
+        // 5. Створення профілю
+        var profile = new PlayerProfile
+        {
+            Email = email.Trim(),
+            Nickname = nickname.Trim(),
+            PasswordHash = hash,
+            PasswordSalt = salt
+        };
+
+        _storage.SaveProfile(profile);
+        return true;
+    }
+
+    // Вхід у гру
+    public PlayerProfile? Login(string login, string password, out string errorMessage)
+    {
+        errorMessage = string.Empty;
+
+        var profile = _storage.FindByLogin(login.Trim().ToLowerInvariant());
+        if (profile == null)
+        {
+            errorMessage = "Користувача не знайдено.";
+            return null;
+        }
+
+        if (!PasswordHasher.VerifyPassword(password, profile.PasswordHash, profile.PasswordSalt))
+        {
+            errorMessage = "Невірний пароль.";
+            return null;
+        }
+
+        return profile;
+    }
+}
+```
 
 ---
 
-## 4. Key Flows
+## 4. Віджет профілю у правому верхньому куті
 
-### Реєстрація нового користувача:
-1. Клієнт надсилає `email`, `nickname`, `password`.
-2. Валідація формату нікнейма: довжина від 3 до 20 символів, відсутність спецсимволів типу `<`, `>`, `'`, `"`.
-3. Політика `UniqueNicknameDPolicy` перевіряє через репозиторій відсутність збігів за `LOWER(nickname)`.
-4. Політика `PasswordComplexityDPolicy` перевіряє пароль на довжину $\ge 8$, наявність літер у різному регістрі, цифри та спецсимволу.
-5. Сервіс `PasswordHashingService` обчислює Argon2id хеш.
-6. Створюється екземпляр `UserAccount` та пов'язаний `Profile` з призначеним базовим аніме-персонажем.
-7. Емітиться подія `UserRegisteredDE`.
-
-### Авторизація користувача:
-1. Клієнт надсилає логін (email або nickname) та пароль.
-2. Пошук акаунта за вказаними даними.
-3. Сервіс безпеки перевіряє пароль через захищений від таймінг-атак виклик `password_verify()`.
-4. Якщо пароль вірний — генеруються криптографічно підписаний Access JWT (термін 15 хв) та Refresh Token.
-5. Якщо пароль невірний — лічильник невдалих спроб збільшується. При 5 невдалих спробах активується блокування на 15 хвилин.
-
----
-
-## 5. Value Objects
-
-| Value Object | Опис | Інваріанти |
-|---|---|---|
-| `UserIdVO` | Унікальний ідентифікатор користувача | Валідний UUID v4 |
-| `NicknameVO` | Ім'я гравця | Довжина 3..20, `^[a-zA-Z0-9_-]+$`, метод `toNormalized()` повертає `strtolower()` |
-| `EmailVO` | Електронна пошта | Валідний формат e-mail |
-| `HashedPasswordVO` | Хеш пароля | Рядок хешу Argon2id (`$argon2id$v=19$m=65536,t=3,p=1$...`) |
-| `UserStatusVO` | Статус акаунта | `ACTIVE`, `SUSPENDED`, `DELETED` |
-
----
-
-## 6. Domain Policies
-
-- `UniqueNicknameDPolicy`: Перевіряє унікальність нікнейму в базі без урахування регістру (нікнейми `Player1` та `player1` вважаються однаковими та забороненими до дублювання).
-- `PasswordComplexityDPolicy`: Вимагає мінімум 8 символів, містить велику літеру, малу літеру, цифру та спеціальний символ (`!@#$%^&*`).
-
----
-
-## 7. Domain Services
-
-- `UserRegistrationService`: Координує перевірки унікальності, хешування та створення акаунта з початковим профілем.
-- `PasswordSecurityService`: Виконує хешування Argon2id та порівняння паролів.
-
----
-
-## 8. Domain Events
-
-- `UserRegisteredDE` (userId, email, nickname, registeredAt)
-- `UserAuthenticatedDE` (userId, authenticatedAt, ipAddress)
-- `UserProfileUpdatedDE` (userId, activeCharacterId, updatedAt)
+- При успішному вході `PlayerProfile` передається у компонент інтерфейсу `UserProfileWidget.cs` (Unity `MonoBehaviour`).
+- У правому верхньому куті відображаються:
+  - Нікнейм поточного гравця.
+  - Аватарка обраного аніме-героя (завантажується за `ActiveCharacterId`).
+  - Кнопка відкриття каталогу персонажів для зміни героя.

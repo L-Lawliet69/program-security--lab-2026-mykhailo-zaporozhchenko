@@ -1,86 +1,125 @@
-# ====== LEADERBOARD MODULE BUSINESS LOGIC ======
+# Бізнес-логіка модуля Leaderboard (Таблиця результатів та статистика)
 
-> Bounded Context: `Leaderboard`. Відповідає за агрегацію результатів усіх зіграних матчів, ведення глобальної таблиці лідерів для всіх учасників та надання публічного доступу до статистики (кількість перемог, поразок, нічиїх, забитих та пропущених голів).
-
----
-
-## 1. Purpose
-
-Модуль `Leaderboard` володіє:
-- Веденням та формуванням глобальної таблиці лідерів, доступної всім зареєстрованим користувачам.
-- Збереженням агрегованих статистичних показників для кожного гравця:
-  - Кількість зіграних матчів (`matchesPlayed`).
-  - Кількість перемог (`wins`), поразок (`losses`), нічиїх (`draws`).
-  - Кількість забитих голів (`goalsScored`).
-  - Кількість пропущених голів (`goalsConceded`).
-  - Різниця м'ячів (`goalDifference = goalsScored - goalsConceded`).
-  - Відсоток перемог (`winRate`).
-- Асинхронною обробкою івенту `MatchCompletedDE` від модуля `Gameplay`.
-- Наданням сторінок лідерборду з пагінацією та пошуком за нікнеймом.
-
-**NOT here:**
-- Розрахунок голів окремих ударів у матчі (належить `Gameplay`).
-- Автентифікація користувачів (належить `Identity`).
+> Модуль: `Leaderboard`. Відповідає за підрахунок і збереження результатів матчів між друзями, формування турнірної таблиці та надання доступу до статистики (кількість перемог, поразок, нічиїх, забитих і пропущених голів) у **Unity (C#)**. Побудований на **простому C# ООП без використання Domain-Driven Design (DDD)**.
 
 ---
 
-## 2. Entities
+## 1. Призначення модуля
 
-| Entity | Basic Fields | Description | Invariants |
-|---|---|---|---|
-| `LeaderboardEntry` *(Aggregate Root)* | `userId`, `nickname`, `activeCharacterName`, `matchesPlayed`, `wins`, `losses`, `draws`, `goalsScored`, `goalsConceded`, `points`, `updatedAt` | Запис конкретного гравця в рейтинговій таблиці. | - `userId` унікальний в таблиці лідерів.<br>- `matchesPlayed == wins + losses + draws`.<br>- Всі лічильники є цілими невід'ємними числами ($\ge 0$).<br>- `points = (wins * 3) + (draws * 1)`. |
-
----
-
-## 3. Key Flows
-
-### Флоу оновлення статистики після завершення матчу:
-1. Модуль `Gameplay` емітить івент `MatchCompletedDE` із полями: `playerAId`, `playerBId`, `finalScoreA`, `finalScoreB`, `winnerId`.
-2. Асинхронний слухач `UpdateLeaderboardOnMatchCompletedListener` отримує подію.
-3. Виконується перевірка ідемпотентності (за `matchId`), щоб запобігти подвійному нарахуванню очок при збоях мережі.
-4. В межах єдиної транзакції:
-   - Для Гравця А:
-     - `matchesPlayed += 1`
-     - `goalsScored += finalScoreA`
-     - `goalsConceded += finalScoreB`
-     - Якщо `winnerId == playerAId` $\rightarrow$ `wins += 1`
-     - Якщо `winnerId == null` (нічия) $\rightarrow$ `draws += 1`
-     - Інакше $\rightarrow$ `losses += 1`
-   - Для Гравця Б:
-     - `matchesPlayed += 1`
-     - `goalsScored += finalScoreB`
-     - `goalsConceded += finalScoreA`
-     - Якщо `winnerId == playerBId` $\rightarrow$ `wins += 1`
-     - Якщо `winnerId == null` $\rightarrow$ `draws += 1`
-     - Інакше $\rightarrow$ `losses += 1`
-5. Перераховується рейтинг та позиція обох гравців.
-6. Публікується подія `LeaderboardUpdatedDE`.
-
-### Флоу перегляду таблиці лідерів:
-1. Зареєстрований користувач відкриває розділ «Таблиця лідерів» (Leaderboard).
-2. Клієнт надсилає `GetGlobalLeaderboardAQ` (з параметрами сторінки та сортування).
-3. Сервер повертає відсортований список (за замовчуванням за `points DESC`, потім `goalDifference DESC`, потім `goalsScored DESC`).
-4. Користувач бачить свій поточний ранг і показники всіх суперників.
+Модуль `Leaderboard` забезпечує:
+1. **Агрегацію статистики:** накопичення показників кожного гравця після завершення серії пенальті:
+   - Кількість зіграних матчів (`MatchesPlayed`).
+   - Кількість перемог (`Wins`), поразок (`Losses`), нічиїх (`Draws`).
+   - Кількість забитих голів (`GoalsScored`).
+   - Кількість пропущених голів (`GoalsConceded`).
+   - Різниця голів (`GoalDifference = GoalsScored - GoalsConceded`).
+   - Рейтингові очки (`Points = Wins * 3 + Draws * 1`).
+2. **Оновлення після матчу:** отримання результатів від `MatchController` після завершення 10 ударів.
+3. **Відображення таблиці:** сортування записів у UI таблиці лідерів.
+4. **Контроль цілісності (для лаби):** збереження статистики з перевірочним підписом HMAC-SHA256 для запобігання підробці очок у текстовому редакторі.
 
 ---
 
-## 4. Value Objects
+## 2. Модель даних (C#)
 
-| Value Object | Опис | Інваріанти |
-|---|---|---|
-| `RatingPointsVO` | Очки гравця в рейтингу | Обчислюється як $3 \times W + 1 \times D$ |
-| `GoalRatioVO` | Різниця та статистика голів | `goalsScored >= 0`, `goalsConceded >= 0` |
-| `WinRateVO` | Відсоток перемог | Число з рухомою комою в межах $[0.0, 100.0]\%$ |
+```csharp
+public class LeaderboardEntry
+{
+    public string Nickname { get; set; } = string.Empty;
+    public int MatchesPlayed { get; set; } = 0;
+    public int Wins { get; set; } = 0;
+    public int Losses { get; set; } = 0;
+    public int Draws { get; set; } = 0;
+    public int GoalsScored { get; set; } = 0;
+    public int GoalsConceded { get; set; } = 0;
+
+    // Властивості, що обчислюються автоматично
+    public int GoalDifference => GoalsScored - GoalsConceded;
+    public int Points => (Wins * 3) + (Draws * 1);
+}
+```
 
 ---
 
-## 5. Domain Policies
+## 3. Сервіс таблиці лідерів (`LeaderboardService.cs`)
 
-- `PositiveStatsDPolicy`: Статистичні лічильники матчів, голів та очок не можуть бути від'ємними за жодних умов.
-- `LeaderboardRankingPolicy`: Правило ранжування: 1) Очки (`points`), 2) Різниця голів (`goalsScored - goalsConceded`), 3) Кількість забитих голів (`goalsScored`), 4) Кількість перемог (`wins`).
+Звичайний C# клас для оновлення та сортування результатів:
+
+```csharp
+public class LeaderboardService
+{
+    private readonly List<LeaderboardEntry> _entries = new();
+    private readonly ISaveStorage _storage;
+
+    public LeaderboardService(ISaveStorage storage)
+    {
+        _storage = storage;
+        _entries = _storage.LoadLeaderboard();
+    }
+
+    // Оновлення статистики після завершення матчу
+    public void RecordMatchResult(string playerA, string playerB, MatchOutcome outcome, int scoreA, int scoreB)
+    {
+        var entryA = GetOrCreateEntry(playerA);
+        var entryB = GetOrCreateEntry(playerB);
+
+        // Оновлюємо ігри та голи
+        entryA.MatchesPlayed += 1;
+        entryA.GoalsScored += scoreA;
+        entryA.GoalsConceded += scoreB;
+
+        entryB.MatchesPlayed += 1;
+        entryB.GoalsScored += scoreB;
+        entryB.GoalsConceded += scoreA;
+
+        // Оновлюємо результати матчу
+        switch (outcome)
+        {
+            case MatchOutcome.PlayerAWon:
+                entryA.Wins += 1;
+                entryB.Losses += 1;
+                break;
+            case MatchOutcome.PlayerBWon:
+                entryB.Wins += 1;
+                entryA.Losses += 1;
+                break;
+            case MatchOutcome.Draw:
+                entryA.Draws += 1;
+                entryB.Draws += 1;
+                break;
+        }
+
+        // Зберігаємо оновлені дані з HMAC-підписом
+        _storage.SaveLeaderboard(_entries);
+    }
+
+    // Отримання відсортованого списку для UI
+    public List<LeaderboardEntry> GetSortedLeaderboard()
+    {
+        return _entries
+            .OrderByDescending(e => e.Points)
+            .ThenByDescending(e => e.GoalDifference)
+            .ThenByDescending(e => e.GoalsScored)
+            .ToList();
+    }
+
+    private LeaderboardEntry GetOrCreateEntry(string nickname)
+    {
+        var entry = _entries.Find(e => e.Nickname.Equals(nickname, StringComparison.OrdinalIgnoreCase));
+        if (entry == null)
+        {
+            entry = new LeaderboardEntry { Nickname = nickname };
+            _entries.Add(entry);
+        }
+        return entry;
+    }
+}
+```
 
 ---
 
-## 6. Domain Events
+## 4. Сценарій відображення у грі
 
-- `LeaderboardUpdatedDE` (userId, matchesPlayed, wins, goalsScored, goalsConceded, newRank)
+1. Гравець у головному меню або після матчу відкриває вкладку «Таблиця лідерів».
+2. `LeaderboardUI.cs` запитує у `LeaderboardService` відсортований список гравців.
+3. Відображається таблиця з колонками: Ранг | Нікнейм | Ігри | В | Н | П | Забиті | Пропущені | Очки.

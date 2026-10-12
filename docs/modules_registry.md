@@ -1,110 +1,99 @@
-# Реєстр модулів та Bounded Contexts — Freekick
+# Реєстр модулів та підсистем проекту — Freekick (PC Unity C#)
 
 | | |
 | --- | --- |
-| **Проект** | Freekick — Онлайн-гра "Пенальті" з аніме-персонажами |
-| **Документ** | Реєстр модулів та архітектурних меж (Bounded Contexts) |
-| **Версія** | 1.0.0 |
-| **Дата оновлення** | 2026-10-03 |
+| **Проект** | Freekick — Любительська онлайн-гра "Пенальті" для ПК (Unity C#) |
+| **Документ** | Реєстр модулів та структури коду |
+| **Версія** | 2.0.0 |
+| **Дата оновлення** | 2026-10-12 |
 
-> Цей документ є обов'язковим реєстром усіх модулів та обмежених контекстів (Bounded Contexts) системи **Freekick**. Він визначає зону відповідальності кожного модуля, його агрегати, зовнішні залежності та рівень безпеки.
+> Цей документ описує розподіл функціональних підсистем (модулів) у проекті **Freekick**. Проект організовано за зрозумілою та чистою модульною схемою на мові **C#** всередині типового проекту **Unity**, що забезпечує легкість підтримки для любительської гри та навчальної лабораторної роботи.
 
 ---
 
-## 1. Загальна карта контекстів (Context Map)
+## 1. Загальна схема підсистем
 
 ```
-+-------------------------------------------------------------------+
-|                        Presentation Layer                         |
-|   (HTTP Controllers, WebSocket Gateway, CLI Seeders/Admin)        |
-+-------------------------------------------------------------------+
-                                  │
-                                  ▼
-+-------------------------------------------------------------------+
-|                        Application Layer                          |
-|             (CQRS Use Cases, Commands, Queries, DTOs)             |
-+-------------------------------------------------------------------+
-                                  │
-                                  ▼
-+-------------------+     +--------------------+     +--------------+
-|     Identity      |     |     Character      |     |   Gameplay   |
-| (Accounts, Auth,  |     |  (Anime Titles &   |     |  (1v1 Match, |
-|     Security)     |     |     Rosters)       |     |  5 Rounds)   |
-+-------------------+     +--------------------+     +--------------+
-          │                         │                        │
-          └─────────────────────────┼────────────────────────┘
-                                    ▼
-                         +--------------------+
-                         |    Leaderboard     |
-                         | (Global Rankings,  |
-                         |    Statistics)     |
-                         +--------------------+
-                                    │
-                                    ▼
-                         +--------------------+
-                         |    SharedKernel    |
-                         | (Base VO, Events,  |
-                         | Exception Registry)|
-                         +--------------------+
++-------------------------------------------------------------------------+
+|                               UI Layer                                  |
+|   (Головне меню, Віджет профілю, Каталог героїв, Екран гри, Таблиця)    |
++-------------------------------------------------------------------------+
+                                     │
+                                     ▼
++-------------------------------------------------------------------------+
+|                             Managers Layer                              |
+|         (GameManager, MatchController, UIManager, NetworkManager)       |
++-------------------------------------------------------------------------+
+                                     │
+          ┌──────────────────────────┼──────────────────────────┐
+          ▼                          ▼                          ▼
++--------------------+     +--------------------+     +-------------------+
+|  Gameplay Module   |     |  Character Module  |     |  Identity Module  |
+|  - PenaltyEngine   |     |  - AnimeTitle      |     |  - PlayerProfile  |
+|  - MatchSession    |     |  - AnimeCharacter  |     |  - AuthService    |
+|  - ShotRecord      |     |  - CatalogService  |     |  - ProfileWidget  |
++--------------------+     +--------------------+     +-------------------+
+          │                          │                          │
+          └──────────────────────────┼──────────────────────────┘
+                                     ▼
++--------------------+     +--------------------+     +-------------------+
+| Leaderboard Module |     |   Network Module   |     |  Security Module  |
+| - LeaderboardEntry |     | - HostController   |     | - PasswordHasher  |
+| - LeaderboardSaver |     | - CommitReveal     |     | - SaveIntegrity   |
+| - PointsCalculator |     | - NetworkPackets   |     | - CryptoRandom    |
++--------------------+     +--------------------+     +-------------------+
 ```
 
 ---
 
-## 2. Перелік Bounded Contexts
+## 2. Опис функціональних модулів
 
-### 2.1. `Identity` (Облікові записи, автентифікація та профілі)
-- **Шлях у вихідному коді:** `src/Domain/Identity/`, `src/Application/Identity/`
-- **Документація модуля:** [docs/modules/identity/business_logic.md](file:///d:/freekick/docs/modules/identity/business_logic.md)
-- **Призначення:** Забезпечення безпечної реєстрації, авторизації, зберігання та перевірки паролів (Argon2id), видачі сесійних токенів, керування профілем користувача та гарантії унікальності нікнеймів.
-- **Aggregate Root:** `UserAccount`
-- **Ключові ентіті:** `Profile`
-- **Сегмент помилок:** `FK.AUTH.x`
-- **Зовнішні контракти (Outsource Contracts):** `IUserRepository`, `IPasswordHasher`, `ITokenProvider`
-- **Залежності:** `SharedKernel`
+### 2.1. `Gameplay` (Ігровий процес серії пенальті 1v1)
+- **Розташування коду:** `Assets/Scripts/Gameplay/`, `Assets/Scripts/Core/`
+- **Документація:** [docs/modules/gameplay/business_logic.md](file:///d:/freekick/docs/modules/gameplay/business_logic.md)
+- **Призначення:** Організація матчу пенальті між двома друзями: жеребкування першого удару (CSPRNG), проведення 5 обов'язкових раундів (10 ударів сумарно), вибір 3 напрямків (`Left`, `Center`, `Right`), визначення голів і сейвів, фіксація переможця або нічиєї (`Draw`).
+- **Ключові C# класи:** `PenaltyEngine`, `MatchSession`, `ShotRecord`, `Enums`.
 
-### 2.2. `Character` (Каталог тайтлів та персонажів)
-- **Шлях у вихідному коді:** `src/Domain/Character/`, `src/Application/Character/`
-- **Документація модуля:** [docs/modules/character/business_logic.md](file:///d:/freekick/docs/modules/character/business_logic.md)
-- **Призначення:** Зберігання структурованого каталогу аніме-франшиз (тайтлів) та відповідних персонажів. Надання інтерфейсу для вибору та зміни активного персонажа в налаштуваннях профілю.
-- **Aggregate Root:** `AnimeTitle`
-- **Ключові ентіті:** `Character`
-- **Сегмент помилок:** `FK.CHAR.x`
-- **Зовнішні контракти (Outsource Contracts):** `ICharacterRepository`, `ITitleRepository`
-- **Залежності:** `SharedKernel`
+### 2.2. `Identity` (Облікові записи та профіль)
+- **Розташування коду:** `Assets/Scripts/Identity/`
+- **Документація:** [docs/modules/identity/business_logic.md](file:///d:/freekick/docs/modules/identity/business_logic.md)
+- **Призначення:** Створення локального чи мережевого облікового запису, перевірка унікальності нікнейму без урахування регістру, безпечне хешування паролів, підтримка віджета профілю у правому верхньому куті вікна гри.
+- **Ключові C# класи:** `PlayerProfile`, `AuthService`, `UserProfileWidget`.
 
-### 2.3. `Gameplay` (Ігровий рушій 1v1 пенальті)
-- **Шлях у вихідному коді:** `src/Domain/Gameplay/`, `src/Application/Gameplay/`
-- **Документація модуля:** [docs/modules/gameplay/business_logic.md](file:///d:/freekick/docs/modules/gameplay/business_logic.md)
-- **Призначення:** Керування життєвим циклом матчу 1v1: жеребкування першого удару (CSPRNG Coin Toss), покрокове пробиття пенальті (5 ударів у кожного гравця, сумарно 10), захист від сніфінгу вибору (Commit-Reveal / прихований ввід), розрахунок результатів сейвів/голів та фіксація підсумку гри.
-- **Aggregate Root:** `Match`
-- **Ключові ентіті:** `PenaltyRound`, `ShotAttempt`
-- **Сегмент помилок:** `FK.GAME.x`
-- **Зовнішні контракти (Outsource Contracts):** `IMatchRepository`, `IRandomNumberGenerator`, `IRealtimeGameNotifier`
-- **Залежності:** `SharedKernel`, посилання на `UserIdVO` з `Identity` та `CharacterIdVO` з `Character`.
+### 2.3. `Character` (Каталог аніме-тайтлів та персонажів)
+- **Розташування коду:** `Assets/Scripts/Character/`
+- **Документація:** [docs/modules/character/business_logic.md](file:///d:/freekick/docs/modules/character/business_logic.md)
+- **Призначення:** Зберігання списку франшиз («Blue Lock», «Captain Tsubasa», «Inazuma Eleven» тощо), розгортання списку доступних персонажів кожного аніме, завантаження іконок та прив'язка обраного героя до профілю гравця.
+- **Ключові C# класи:** `AnimeTitle`, `AnimeCharacter`, `CharacterCatalog`.
 
-### 2.4. `Leaderboard` (Глобальний рейтинг та статистика)
-- **Шлях у вихідному коді:** `src/Domain/Leaderboard/`, `src/Application/Leaderboard/`
-- **Документація модуля:** [docs/modules/leaderboard/business_logic.md](file:///d:/freekick/docs/modules/leaderboard/business_logic.md)
-- **Призначення:** Ведення загальної публічної таблиці лідерів для всіх учасників. Накопичення кількості матчів, перемог, поразок, нічиїх, забитих та пропущених голів, розрахунок коефіцієнтів та місця в топі.
-- **Aggregate Root:** `LeaderboardEntry` (Read/Write Model)
-- **Сегмент помилок:** `FK.LEAD.x`
-- **Зовнішні контракти (Outsource Contracts):** `ILeaderboardRepository`
-- **Залежності:** `SharedKernel`; асинхронно реагує на подію `MatchCompletedDE` від `Gameplay`.
+### 2.4. `Leaderboard` (Таблиця лідерів та статистика дуелей)
+- **Розташування коду:** `Assets/Scripts/Leaderboard/`
+- **Документація:** [docs/modules/leaderboard/business_logic.md](file:///d:/freekick/docs/modules/leaderboard/business_logic.md)
+- **Призначення:** Підрахунок і збереження результатів матчів між друзями: кількість ігор, перемог, поразок, нічиїх, забитих і пропущених голів, нарахування очок ($3 \times \text{перемоги} + 1 \times \text{нічиї}$).
+- **Ключові C# класи:** `LeaderboardEntry`, `LeaderboardService`.
 
-### 2.5. `SharedKernel` (Спільне ядро)
-- **Шлях у вихідному коді:** `src/Domain/SharedKernel/`
-- **Призначення:** Фундаментальні абстракції, інтерфейси сутностей та об'єктів-значень, базові класи винятків (`AFKException`), контракти доменних подій.
-- **Сегмент помилок:** `FK.CORE.x`
-- **Залежності:** Нуль зовнішніх залежностей.
+### 2.5. `Network` (Мережева взаємодія для гри з друзями)
+- **Розташування коду:** `Assets/Scripts/Network/`
+- **Призначення:** Забезпечення простого з'єднання двох комп'ютерів (Host / Client) через LAN або прямий IP, синхронізація станів раундів, обмін мережевими пакетами та реалізація схеми Commit-Reveal для захисту від мережевого сніфінгу ходів.
+- **Ключові C# класи:** `NetworkManager`, `CommitRevealHandler`, `NetworkPackets`.
+
+### 2.6. `Security` (Компоненти безпеки даних для лаби)
+- **Розташування коду:** `Assets/Scripts/Security/`
+- **Призначення:** Реалізація практичних захисних функцій, які вимагаються лабораторною роботою з безпеки програмного забезпечення:
+  - Хешування паролів із сіллю (Argon2id або PBKDF2).
+  - Криптографічно безпечна генерація випадкових чисел (CSPRNG) для жеребкування.
+  - Контроль цілісності файлів збереження за допомогою HMAC-SHA256 (захист від редагування блокнотом).
+- **Ключові C# класи:** `PasswordHasher`, `CryptoRandom`, `SaveIntegrity`.
 
 ---
 
-## 3. Матриця міжмодульної взаємодії
+## 3. Взаємодія між підсистемами
 
-| Ініціатор | Одержувач | Спосіб взаємодії | Призначення |
+| Підсистема 1 | Підсистема 2 | Зв'язок | Мета взаємодії |
 |---|---|---|---|
-| `Identity` | `Leaderboard` | Domain Event (`UserRegisteredDE`) | Створення початкового запису гравця в таблиці лідерів з нульовою статистикою |
-| `Identity` | `Character` | Reference by ID (`CharacterIdVO`) | Прив'язка обраного персонажа до профілю користувача |
-| `Gameplay` | `Identity` | Reference by ID (`UserIdVO`) | Ідентифікація учасників матчу |
-| `Gameplay` | `Character` | Reference by ID (`CharacterIdVO`) | Візуалізація аватара та спеціальних анімацій гравця в матчі |
-| `Gameplay` | `Leaderboard` | Domain Event (`MatchCompletedDE`) | Атомарне оновлення статистики зіграного матчу (перемога/поразка, забиті/пропущені голи) |
+| `Identity` | `Character` | Прямий виклик методу | Прив'язка ID обраного персонажа до профілю користувача |
+| `Identity` | `Security` | Виклик сервісу | Хешування пароля при реєстрації та перевірка при вході |
+| `Gameplay` | `Security` | Виклик сервісу | Безпечний кидок монети (CSPRNG) перед стартом серії пенальті |
+| `Gameplay` | `Network` | Передача пакетів | Передача прихованих ходів хосту та розкриття результату обом клієнтам |
+| `Gameplay` | `Leaderboard` | Виклик методу | Оновлення статистики гравців після завершення 10 ударів матчу |
+| `Leaderboard` | `Security` | Виклик сервісу | Формування та перевірка HMAC-підпису файлу збереження результатів |

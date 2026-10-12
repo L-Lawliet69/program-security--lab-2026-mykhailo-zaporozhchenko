@@ -1,235 +1,218 @@
 # Опис архітектури системи (Architecture Description) — Freekick
 
-**Відповідно до положень міжнародного стандарту ISO/IEC/IEEE 42010:2022**
+**Відповідно до положень міжнародного стандарту ISO/IEC/IEEE 42010:2022 (у спрощеному академічному форматі)**
 
 | | |
 | --- | --- |
 | **Документ** | Architecture Description (AD) |
-| **Система** | Freekick — Онлайн-гра "Пенальті" з аніме-персонажами |
-| **Версія** | 1.0.0 |
-| **Дата створення** | 2026-10-03 |
-| **Статус** | Approved / Architecture Baseline |
+| **Система** | Freekick — Любительська онлайн-гра "Пенальті" для ПК (Unity C#) |
+| **Версія** | 2.0.0 |
+| **Дата оновлення** | 2026-10-12 |
+| **Статус** | Approved / Baseline |
 | **Автор** | Mykhailo Zaporozhchenko |
 
 ---
 
-## 1. Ідентифікація архітектури та контекст (Identification & Context)
+## 1. Ідентифікація архітектури та контекст
 
-Система **«Freekick»** являє собою розподілений багатокористувацький програмний комплекс реального часу, спроектований за принципами предметно-орієнтованого проектування (Domain-Driven Design), гексагональної архітектури (Ports & Adapters) та моделі абсолютного авторитету сервера (Server-Authoritative).
+Система **«Freekick»** — це любительська комп'ютерна онлайн-гра (дуель 1v1 серії післяматчевих пенальті з аніме-персонажами) для платформи **PC (Windows)**, створена на ігровому рушії **Unity (C#)**.
 
-Документ складено з дотриманням положень стандарту **ISO/IEC/IEEE 42010:2022** (*Software, systems and enterprise — Architecture description*).
+Гра призначена для особистого користування та спільних матчів з друзями по мережі, а також виконується як практичне завдання до лабораторної роботи з дисципліни **«Безпека програм та даних» (Program Security Lab 2026)**.
+
+Замість надмірно складних корпоративних підходів архітектура базується на **простій та прозорій модульній об'єктно-орієнтованій моделі (ООП на C#)** у середовищі Unity, що ідеально підходить для студентського проекту та навчальних завдань із захисту даних.
 
 ---
 
-## 2. Зацікавлені сторони та їхні інтереси (Stakeholders & Concerns)
+## 2. Зацікавлені сторони (Stakeholders & Concerns)
 
-| Зацікавлена сторона | Роль | Ключові архітектурні інтереси (Concerns) |
+| Зацікавлена сторона | Роль | Ключові інтереси (Concerns) |
 |---|---|---|
-| **Гравці (Players)** | Кінцеві користувачі | Чесність гри (Anti-Cheat), миттєвий відгук (низький пінг), привабливий вибір аніме-персонажів, точність таблиці лідерів. |
-| **Офіцер безпеки (Security Auditor)** | Контроль ризиків | Надійність криптографічного захисту (Argon2id), захищеність від перехоплення вибору (Anti-sniffing), запобігання ін'єкціям та підробці ігрових результатів. |
-| **Розробник / Архітектор (Software Engineer)** | Супровід системи | Чистота коду, дотримання SOLID та DDD, тестованість компонентів, відсутність протікання фреймворку в доменні моделі. |
-| **Системний адміністратор (DevOps)** | Експлуатація | Стабільність сокетних сесій, мінімальне навантаження на БД завдяки кешуванню Redis, простота контейнеризації через Docker. |
+| **Гравці (Друзі / Користувачі)** | Кінцеві гравці | Зручність гри на ПК, простий запуск матчу з другом по мережі, вибір улюблених аніме-персонажів, чесний підрахунок очок. |
+| **Викладач / Студент (Безпека ПЗ)** | Лабораторна робота | Дотримання вимог безпеки: надійне хешування паролів, захист від сніфінгу ходів (Anti-Sniffing), перевірка цілісності збережень (HMAC-SHA256), відсутність SQL-ін'єкцій. |
+| **Розробник (Unity C#)** | Підтримка проекту | Простота коду, чиста ООП структура без громіздких патернів, розділення логіки та графіки (UI), легке тестування. |
 
 ---
 
-## 3. Архітектурні точки зору та представлення (Architecture Views)
+## 3. Архітектурні представлення (Views)
 
-### 3.1. Системний контекст (Context View)
+### 3.1. Мережевий контекст (Network & System Topology)
 
-Система Freekick взаємодіє з гравцями через захищені канали HTTPS та WSS (TLS 1.3):
+Для гри з друзями використовується легка клієнт-серверна топологія з моделлю **Host-Authoritative** (один гравець запускає хост, інший підключається як клієнт через локальну мережу, прямий IP або код кімнати):
 
 ```mermaid
-flowchart TD
-    PlayerA["Гравець А (Клієнт)"] -- "WSS / HTTPS (TLS 1.3)" --> Gateway["API & WebSocket Gateway (Nginx/Traefik)"]
-    PlayerB["Гравець Б (Клієнт)"] -- "WSS / HTTPS (TLS 1.3)" --> Gateway
+flowchart LR
+    subgraph HostPC ["ПК Гравця А (Хост / Сервер)"]
+        UnityHost["Unity Клієнт + Хост-контролер"]
+        LocalSaveA["Локальні збереження (SQLite / JSON)\n+ HMAC-SHA256"]
+        UnityHost --- LocalSaveA
+    end
 
-    Gateway --> AppService["Backend Application (PHP 8.3 / Node.js)"]
+    subgraph ClientPC ["ПК Гравця Б (Клієнт)"]
+        UnityClient["Unity Клієнт"]
+        LocalSaveB["Локальні збереження (SQLite / JSON)\n+ HMAC-SHA256"]
+        UnityClient --- LocalSaveB
+    end
 
-    AppService --> RedisCache["In-Memory Store (Redis 7)\n- Матчмейкінг\n- Сесії раундів\n- Commit-Reveal"]
-    AppService --> PostgresDB["Реляційна СУБД (PostgreSQL 16)\n- Користувачі\n- Каталог персонажів\n- Таблиця лідерів"]
+    UnityClient <== "Мережевий сокетний зв'язок (LAN / Direct IP / Код кімнати)" ==> UnityHost
 ```
+
+- **Хост-авторитет (Host-Authoritative):** гравець-хост або легкий локальний сокетний сервер тримає стан кімнати, синхронізує таймер та розраховує голи/сейви.
+- **Збереження даних:** облікові записи та статистика зберігаються локально на кожному ПК у файлі `save.json` або базі `SQLite` з контрольною сумою HMAC-SHA256 для захисту від підробки значень.
 
 ---
 
-### 3.2. Функціональне представлення (Functional & Domain View)
+### 3.2. Компонентна архітектура клієнта Unity (C#)
 
-Внутрішня організація слідує шарам Clean Architecture / Hexagonal Architecture:
+Архітектура коду організована за принципом простого поділу обов'язків:
 
 ```mermaid
 flowchart TB
-    subgraph Presentation ["Presentation Layer"]
-        HttpCtrl["HTTP REST Controllers\n- Auth\n- Catalog"]
-        WsHandler["WebSocket Gateway Handler\n- Match Room\n- Input Stream"]
+    subgraph UI ["Шар інтерфейсу (Unity MonoBehaviour & UI Canvas)"]
+        AuthUI["Вікно входу / реєстрації"]
+        ProfileWidget["Віджет профілю (правий верхній кут)"]
+        CharacterCatalogUI["Каталог тайтлів і героїв"]
+        MatchUI["Ігровий екран (ворота, кнопки напрямку, рахунок)"]
+        LeaderboardUI["Таблиця результатів"]
     end
 
-    subgraph Application ["Application Layer (CQRS)"]
-        UseCases["Use Cases\n- RegisterUserUC\n- QueueForMatchUC\n- SubmitShotUC\n- GetLeaderboardUC"]
-        DTOs["DTO / In-Out Models"]
+    subgraph Managers ["Шар ігрових менеджерів (MonoBehaviour)"]
+        GameManager["GameManager (Життєвий цикл гри)"]
+        MatchController["MatchController (Керування 10 ударами)"]
+        NetworkManager["NetworkManager (Обмін пакетами між друзями)"]
     end
 
-    subgraph Domain ["Domain Layer (Business Core)"]
-        direction TB
-        IdentityBC["Bounded Context: Identity\n- UserAccount (AR)\n- Profile\n- UniqueNicknameDPolicy"]
-        CharacterBC["Bounded Context: Character\n- AnimeTitle (AR)\n- Character\n- CharacterAvailabilityDPolicy"]
-        GameplayBC["Bounded Context: Gameplay\n- Match (AR)\n- PenaltyRound\n- ShotAttempt\n- MustCompleteAllFiveShotsDPolicy\n- PenaltyResolutionService"]
-        LeaderboardBC["Bounded Context: Leaderboard\n- LeaderboardEntry (AR)\n- RankingPolicy"]
-        SharedKernel["SharedKernel\n- Base VO / Contracts / AFKException"]
+    subgraph Core ["Шар чистої C# логіки (Plain C# Classes)"]
+        PenaltyEngine["PenaltyEngine (Розрахунок голів, жеребкування)"]
+        MatchSession["MatchSession (Дані матчу, 5 раундів)"]
+        PlayerData["PlayerData & Enums"]
     end
 
-    subgraph Infrastructure ["Infrastructure Layer"]
-        DBRepo["Postgres Repositories"]
-        RedisSession["Redis Session Manager"]
-        CryptoService["Argon2id Hasher & CSPRNG"]
+    subgraph Services ["Шар сервісів та безпеки (Data & Security)"]
+        AuthService["AuthService (Перевірка нікнеймів, вхід)"]
+        SaveManager["SaveManager (Запис / читання JSON та SQLite)"]
+        SecurityHelper["SecurityHelper (Argon2id/PBKDF2, HMAC-SHA256, CSPRNG)"]
     end
 
-    Presentation --> Application
-    Application --> Domain
-    Infrastructure -.->|Implements Contracts| Domain
+    UI --> Managers
+    Managers --> Core
+    Managers --> Services
+    Core --> Services
 ```
 
 ---
 
-### 3.3. Представлення безпеки (Security & Trust View)
+### 3.3. Представлення безпеки: Захист від сніфінгу (Commit-Reveal)
 
-#### 3.3.1. Межі довіри (Trust Boundaries)
-1. **Зовнішня зона (Untrusted):** Клієнтський додаток. Клієнт вважається скомпрометованим за замовчуванням. Жодна бізнес-перевірка не делегується клієнту.
-2. **DMZ / Мережевий шлюз:** TLS Termination, перевірка лімітів запитів (Rate Limiting).
-3. **Внутрішня захищена зона (Trusted):** Бекенд-сервер, процесор доменної логіки, приватні шини Redis та PostgreSQL.
-
-#### 3.3.2. Схема захисту від аналізу пакетів (Anti-Sniffing Commit-Reveal)
-Для унеможливлення підглядання вибору напрямку удару/сейву сервер реалізує запечатану обробку:
+Щоб суперник не міг перехопити напрямок удару через мережевий аналізатор трафіку (Wireshark), вибори напрямків надсилаються приховано і розкриваються одночасно:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Shooter as Стрілець (Player A)
-    participant Server as Game Server (Authoritative)
-    actor Keeper as Воротар (Player B)
+    actor PlayerA as Стрілець (Гравець А)
+    participant Host as Хост матчу (Unity Host)
+    actor PlayerB as Воротар (Гравець Б)
 
-    Note over Shooter,Keeper: Початок напівраунду (10 секунд на вибір)
-    Shooter->>Server: WSS Packet: SubmitShotDirection(LEFT) [Sealed]
-    Note over Server: Сервер зберігає LEFT у Redis (Клієнту Б не повідомляється!)
-    Server-->>Shooter: ACK: ShotChoiceAccepted
-    Keeper->>Server: WSS Packet: SubmitDiveDirection(CENTER) [Sealed]
-    Note over Server: Сервер фіксує обидва вибори -> розкриття стану
-    Note over Server: PenaltyResolutionService: LEFT != CENTER => GOAL!
-    Server->>Shooter: WSS Broadcast: Result(Shooter=LEFT, Keeper=CENTER, Outcome=GOAL)
-    Server->>Keeper: WSS Broadcast: Result(Shooter=LEFT, Keeper=CENTER, Outcome=GOAL)
-    Note over Shooter,Keeper: Обидва клієнти одночасно запускають анімацію
+    Note over PlayerA,PlayerB: Початок удару (таймер 10 секунд на вибір)
+    PlayerA->>Host: Пакет: SubmitDirection(Left) [Приховано]
+    Note over Host: Хост зберігає вибір Стрільця, НЕ передаючи його Воротарю!
+    Host-->>PlayerA: Підтвердження: Вибір прийнято
+    PlayerB->>Host: Пакет: SubmitDirection(Center) [Приховано]
+    Note over Host: Отримано вибори від ОБОХ гравців!
+    Note over Host: PenaltyEngine.ResolveShot(Left, Center) => GOAL
+    Host->>PlayerA: Розкриття результату: (Стрілець = Left, Воротар = Center, Результат = GOAL)
+    Host->>PlayerB: Розкриття результату: (Стрілець = Left, Воротар = Center, Результат = GOAL)
+    Note over PlayerA,PlayerB: Обидва клієнти одночасно програють анімацію удару та оновлюють табло
 ```
 
 ---
 
-### 3.4. Інформаційне представлення (Data / Information View)
-
-Схема реляційних зв'язків у PostgreSQL:
+### 3.4. Модель даних (Прості класи та зв'язки)
 
 ```mermaid
-erDiagram
-    USERS ||--|| PROFILES : owns
-    PROFILES }|--|| CHARACTERS : selects
-    TITLES ||--|{ CHARACTERS : contains
-    USERS ||--o{ MATCHES_AS_PLAYER_A : plays
-    USERS ||--o{ MATCHES_AS_PLAYER_B : plays
-    MATCHES ||--|{ MATCH_SHOTS : records
-    USERS ||--|| LEADERBOARD_ENTRIES : tracks
-
-    USERS {
-        uuid id PK
-        string email UK
-        string nickname UK
-        string normalized_nickname UK
-        string password_hash
-        string status
-        timestamp created_at
+classDiagram
+    class PlayerProfile {
+        +string Id
+        +string Nickname
+        +string Email
+        +string PasswordHash
+        +string ActiveCharacterId
     }
 
-    PROFILES {
-        uuid id PK
-        uuid user_id FK
-        uuid active_character_id FK
-        timestamp updated_at
+    class AnimeTitle {
+        +string Id
+        +string Name
+        +List~AnimeCharacter~ Characters
     }
 
-    TITLES {
-        uuid id PK
-        string name UK
-        string slug UK
-        text description
-        boolean is_active
+    class AnimeCharacter {
+        +string Id
+        +string Name
+        +string TitleId
+        +string SpritePath
     }
 
-    CHARACTERS {
-        uuid id PK
-        uuid title_id FK
-        string name
-        string avatar_url
-        boolean is_default
-        boolean is_available
+    class MatchSession {
+        +string MatchId
+        +string PlayerAId
+        +string PlayerBId
+        +string FirstShooterId
+        +int CurrentRound
+        +int TotalShots
+        +int ScoreA
+        +int ScoreB
+        +MatchOutcome Outcome
+        +List~ShotRecord~ History
     }
 
-    MATCHES {
-        uuid id PK
-        uuid player_a_id FK
-        uuid player_b_id FK
-        uuid first_shooter_id FK
-        string status
-        int current_round
-        int score_a
-        int score_b
-        uuid winner_id FK
-        timestamp created_at
-        timestamp finished_at
+    class ShotRecord {
+        +int RoundNumber
+        +string ShooterId
+        +string KeeperId
+        +Direction ShotDirection
+        +Direction DiveDirection
+        +ShotResult Result
     }
 
-    MATCH_SHOTS {
-        uuid id PK
-        uuid match_id FK
-        int round_number
-        int turn_number
-        uuid shooter_id FK
-        uuid goalkeeper_id FK
-        string shot_direction
-        string dive_direction
-        string result
-        timestamp executed_at
+    class LeaderboardEntry {
+        +string Nickname
+        +int MatchesPlayed
+        +int Wins
+        +int Losses
+        +int Draws
+        +int GoalsScored
+        +int GoalsConceded
+        +int Points
     }
 
-    LEADERBOARD_ENTRIES {
-        uuid id PK
-        uuid user_id FK, UK
-        string nickname
-        int matches_played
-        int wins
-        int losses
-        int draws
-        int goals_scored
-        int goals_conceded
-        int points
-        timestamp updated_at
-    }
+    PlayerProfile "1" --> "1" AnimeCharacter : обирає
+    AnimeTitle "1" --> "*" AnimeCharacter : містить
+    MatchSession "1" --> "*" ShotRecord : записує
+    PlayerProfile "1" --> "1" LeaderboardEntry : має статистику
 ```
 
 ---
 
-## 4. Журнал архітектурних рішень (Architecture Decision Records — ADR)
+## 4. Журнал архітектурних рішень (ADR)
 
-### ADR-001: Архітектура абсолютного авторитету сервера (Server-Authoritative Game Logic)
-- **Контекст:** Гра є змагальною онлайн-дуеллю 1v1. Якщо клієнт самостійно визначатиме факт взяття воріт, гравці зможуть модифікувати клієнт для гарантованих перемог.
-- **Рішення:** Всі правила гри, черговість ударів, детекція голів/сейвів та оновлення статистики реалізовані виключно на бекенді. Клієнт є суто інструментом відображення (View) та введення ходів.
-- **Наслідки:** 100% захист від читерства на рівні клієнта; незначне навантаження на обчислювальні ресурси сервера.
+### ADR-001: Вибір Unity (C#) та легкого мережевого коду для ПК
+- **Контекст:** Проект є любительською грою для особистого вжитку з друзями та завданням до лабораторної роботи з безпеки ПЗ. Розгортати важкі мікросервіси в хмарі є недоцільним та ресурсомістким.
+- **Рішення:** Розробка на рушії Unity з мовою C# для платформи Windows. Мережева взаємодія реалізується через легкий C# код (Unity Netcode / Mirror / сокети) з підключенням за кодом кімнати або прямим IP.
+- **Наслідки:** Швидка розробка, легкий запуск на ПК без необхідності орендувати сервери.
 
-### ADR-002: Обов'язковість завершення всіх 5 раундів (10 ударів)
-- **Контекст:** У класичному футболі серія пенальті зупиняється, якщо одна сторона математично відірвалася (наприклад, 3:0 після 3 ударів). Проте у Freekick глобальна таблиця лідерів враховує не лише перемоги, а й різницю м'ячів, загальну кількість забитих та пропущених голів.
-- **Рішення:** На рівні доменної політики `MustCompleteAllFiveShotsDPolicy` зафіксовано обов'язкове виконання всіх 5 ударів кожним гравцем за будь-якого поточного рахунку.
-- **Наслідки:** Забезпечується максимальна статистична справедливість у таблиці лідерів; підвищується спортивний азарт гравців пробивати серію до кінця.
+### ADR-002: Використання чистої та зрозумілої модульної ООП архітектури на C#
+- **Контекст:** Проект створюється як любительська гра для гри з друзями та лабораторна робота. Надмірна кількість складних абстракцій і шаблонів корпоративного рівня ускладнювала розробку та розуміння простої гри в пенальті.
+- **Рішення:** Використання класичного об'єктно-орієнтованого проектування (C# класи, моделі, менеджери `GameManager`, `MatchController`, `AuthService`, звичайні переліки).
+- **Наслідки:** Код є лаконічним, легким для сприйняття, швидко модифікується та легко покривається юніт-тестами.
 
-### ADR-003: Використання Argon2id для хешування паролів
-- **Контекст:** Дисципліна «Безпека програм та даних» вимагає застосування сучасних стандартів криптографічного захисту персональних даних.
-- **Рішення:** Паролі користувачів хешуються алгоритмом Argon2id ($m=65536, t=3, p=1$) з індивідуальною випадковою сіллю.
-- **Наслідки:** Забезпечується найвищий рівень захисту від перебору за словником та атак із застосуванням GPU/FPGA.
+### ADR-003: Обов'язкове завершення всіх 5 раундів (10 ударів) та фіксація нічиєї
+- **Контекст:** Для справедливого обліку статистики забитих та пропущених м'ячів між друзями необхідно зберігати повну історію серії.
+- **Рішення:** Гра завжди триває рівно 5 раундів (по 5 ударів у кожного гравця, сумарно 10 ударів) незалежно від поточного відриву. При рівності голів після 10 ударів фіксується нічия (`Draw`), і обом гравцям нараховується по +1 очку в таблицю.
+- **Наслідки:** Чесна та повна статистика матчів.
 
-### ADR-004: Схема одночасного запечатаного вводу (Commit-Reveal Anti-Sniffing)
-- **Контекст:** Якщо передавати вибір напрямку снайпера відкритим текстом на клієнт воротаря, зловмисник зможе аналізувати мережеві сокети Wireshark-подібними утилітами і завжди парирувати удари.
-- **Рішення:** Сервер збирає вибори обох гравців асинхронно у пам'яті (Redis) і оприлюднює результат одночасно обом учасникам лише після фіксації обох пакетів або після спливу таймера раунду.
-- **Наслідки:** Повна неможливість сніфінгу вибору суперника під час фази удару.
+### ADR-004: Схема захисту від сніфінгу ходів та контроль цілісності сейвів
+- **Контекст:** Лабораторна робота вимагає демонстрації практичних навичок захисту даних.
+- **Рішення:**
+  1. Приховане зведення ходів на хості (Commit-Reveal) для захисту від мережевого перехоплення пакетів у Wireshark.
+  2. Додавання підпису HMAC-SHA256 до файлу збереження `save.json` для виявлення ручного редагування очок у блокноті.
+  3. Хешування паролів із сіллю (Argon2id або PBKDF2).
+- **Наслідки:** Повне виконання навчальних вимог дисципліни «Безпека програм та даних».
