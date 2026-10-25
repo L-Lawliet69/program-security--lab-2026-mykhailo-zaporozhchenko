@@ -28,6 +28,9 @@
 Вся нормативна та технічна документація знаходиться у директорії [`docs/`](docs/README.md):
 
 - 📜 [**Політика проекту (docs/project_policy.md)**](docs/project_policy.md) — інженерні стандарти, структура Unity-проекту, C# конвенції, безпека даних для лабораторної роботи.
+- 🛡️ [**Політика безпеки (docs/security_policy.md)**](docs/security_policy.md) — вимоги безпечної розробки, стандарти криптографії, захист від сніфінгу та цілісність даних.
+- 📊 [**Модель загроз STRIDE (docs/threat_model.md)**](docs/threat_model.md) — аналіз загроз компонентів системи за STRIDE, діаграма потоків даних (DFD), заходи захисту.
+- 🔒 [**Політика конфіденційності (docs/privacy_policy.md)**](docs/privacy_policy.md) — правила збору, обробки та захисту персональних даних користувачів.
 - ⚽ [**Опис бізнес-логіки (docs/business_logic.md)**](docs/business_logic.md) — легка ігрова логіка: матч, раунди, розрахунок голів і сейвів, жеребкування, нічия, каталог героїв.
 - 📋 [**Реєстр модулів (docs/modules_registry.md)**](docs/modules_registry.md) — логічні підсистеми: Identity, Character, Gameplay, Leaderboard, Network, Security.
 - 📐 [**Специфікація вимог до ПЗ (docs/srs.md)**](docs/srs.md) — вимоги до гри за спрощеним стандартом ISO/IEC/IEEE 29148:2018 під умови лаби.

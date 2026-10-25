@@ -8,9 +8,10 @@
 
 ## 🧭 Навігація по документації
 
-| Документ | Формат / Стандарт | Опис |
-|---|---|---|
 | 📜 [**Політика проекту (docs/project_policy.md)**](file:///d:/freekick/docs/project_policy.md) | Стандарти проекту | Організація Unity-проекту (C#), стандарти кодування, безпека даних збережень (HMAC-SHA256), криптографічний захист паролів, Git workflow. |
+| 🛡️ [**Політика безпеки (docs/security_policy.md)**](file:///d:/freekick/docs/security_policy.md) | Стандарти безпеки ПЗ | Обов'язкові правила безпечної розробки, захист паролів, Commit-Reveal, HMAC-контроль цілісності, безпечне середовище. |
+| 📊 [**Модель загроз STRIDE (docs/threat_model.md)**](file:///d:/freekick/docs/threat_model.md) | Моделювання загроз | Аналіз компонентів системи за STRIDE, діаграма DFD, загрози мережевого сніфінгу, контрзаходи. |
+| 🔒 [**Політика конфіденційності (docs/privacy_policy.md)**](file:///d:/freekick/docs/privacy_policy.md) | Захист персональних даних | Правила обробки нікнейму, email та статистики дуелей, локальне зберігання даних на ПК гравця. |
 | ⚽ [**Загальна бізнес-логіка (docs/business_logic.md)**](file:///d:/freekick/docs/business_logic.md) | Ігрова логіка | Зрозуміла легка логіка дуелі: 5 обов'язкових раундів (10 ударів), 3 напрямки (`LEFT`, `CENTER`, `RIGHT`), розрахунок голів/сейвів, жеребкування, сценарій нічиєї. |
 | 📋 [**Реєстр модулів (docs/modules_registry.md)**](file:///d:/freekick/docs/modules_registry.md) | Структура коду | Опис підсистем: `Identity`, `Character`, `Gameplay`, `Leaderboard`, `Network`, `Security`. |
 | 📐 [**Специфікація вимог до ПЗ (docs/srs.md)**](file:///d:/freekick/docs/srs.md) | Спрощений **ISO/IEC/IEEE 29148:2018** | Функціональні вимоги до гри, вимоги безпеки для лаби, критерії приймального тестування. |
